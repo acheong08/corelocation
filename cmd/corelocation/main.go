@@ -49,7 +49,7 @@ func (s *stringsFlag) Set(value string) error { *s = append(*s, value); return n
 const usage = `Usage:
   corelocation wifi --bssid MAC [--bssid MAC ...] [--lat LAT --lon LON] [--limit N]
   corelocation cell --mcc N --mnc N --cell-id N --tac N [--lat LAT --lon LON] [--limit N]
-  corelocation tile (--key DECIMAL | --lat LAT --lon LON [--zoom N])
+  corelocation tile (--key DECIMAL | --lat LAT --lon LON)
   corelocation tile-key (--key DECIMAL | --lat LAT --lon LON --zoom N)
 
 Common flags (after the subcommand):
@@ -58,8 +58,9 @@ Common flags (after the subcommand):
   --timeout DURATION                 Whole-operation timeout (default 20s)
   --attempt-timeout DURATION         Per-endpoint timeout (default 10s)
 
-Tile coordinates use zoom 13 by default. tile-key is offline and requires an
-explicit zoom when encoding. Lookup JSON includes records, region, attempts,
+Tile queries require zoom 13, including when supplying a key; there is no --zoom
+option. tile-key is offline and requires an explicit zoom when encoding.
+Lookup JSON includes records, region, attempts,
 and an error field on failure. Tile-key JSON contains key (decimal string),
 zoom, and center. Diagnostics go to stderr; failures exit nonzero.
 `
@@ -130,7 +131,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, cfg runCo
 	var limit int64
 	var mcc, mnc, cellID, tac uint64
 	var keyText string
-	var zoom int
+	zoom := corelocation.WiFiTileZoom
 	switch command {
 	case "wifi":
 		fs.Var(&bssids, "bssid", "six-byte MAC address (repeatable)")
@@ -152,7 +153,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, cfg runCo
 		fs.Int64Var(&limit, "limit", 0, "maximum results (0 uses service default)")
 	case "tile", "tile-key":
 		fs.StringVar(&keyText, "key", "", "decimal uint64 tile key")
-		fs.IntVar(&zoom, "zoom", 13, "tile zoom (required for tile-key encoding)")
+		if command == "tile-key" {
+			fs.IntVar(&zoom, "zoom", corelocation.WiFiTileZoom, "offline tile zoom (required when encoding)")
+		}
 	}
 	if err := fs.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -241,6 +244,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, cfg runCo
 		keyZoom, err := key.Zoom()
 		if err != nil {
 			return fail(err, 2)
+		}
+		if command == "tile" && keyZoom != corelocation.WiFiTileZoom {
+			return fail(fmt.Errorf("Wi-Fi tile queries require zoom %d; key has zoom %d", corelocation.WiFiTileZoom, keyZoom), 2)
 		}
 		center, err := key.Center()
 		if err != nil {

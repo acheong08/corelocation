@@ -145,7 +145,7 @@ func TestTileMalformedAndEmpty(t *testing.T) {
 	for _, data := range [][]byte{nil, {0xff}} {
 		calls := 0
 		c := localClient(t, func(w http.ResponseWriter, r *http.Request) { calls++; w.Write(data) }, nil)
-		_, err := c.FetchTile(context.Background(), 1)
+		_, err := c.FetchTile(context.Background(), 81644851)
 		if len(data) == 0 {
 			if calls != 2 || !errors.Is(err, ErrNoResults) {
 				t.Fatalf("calls %d err %v", calls, err)

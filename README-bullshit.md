@@ -5,18 +5,6 @@ services**. This is a rewrite of the core query functionality in
 [apple-corelocation-experiments](https://github.com/acheong08/apple-corelocation-experiments),
 not a wrapper around the macOS CoreLocation framework.
 
-- Typed Wi-Fi BSSID and LTE cell lookups, plus Wi-Fi tile queries.
-- Automatic international/China endpoint preference and bounded fallback.
-- No shapefiles, geospatial dependencies, CGo, databases, vendor database, or UI.
-- Context cancellation, per-attempt deadlines, bounded response bodies, typed
-  errors, injectable HTTP transport, and endpoint provenance.
-- One runtime dependency: the Go protobuf runtime. Wire types stay internal.
-
-The services are reverse-engineered, unsupported, and may change or stop working.
-Use only for authorized research and respect service terms, privacy, and rate
-limits. A query sends the submitted network identifiers (or tile key) to Apple;
-**fallback may send the same query to both regional infrastructures**. Pin a
-region when that is inappropriate. Nothing is uploaded to Apple's collection API.
 
 ## Build
 
@@ -32,15 +20,10 @@ go test -race ./...
 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o bin/corelocation ./cmd/corelocation
 ```
 
-This is a local, unpublished repository. The Go module path is
-`github.com/acheong08/corelocation`; adjust it if publishing somewhere else.
-
 ## CLI
 
 Flags follow the subcommand. Query results are JSON on stdout; diagnostics go to
-stderr. Exit codes are 0 for success, 1 for a query/output failure, and 2 for
-invalid arguments. Empty results from every attempted endpoint are a failure,
-not a fabricated location. Query-failure JSON retains endpoint attempts.
+stderr.
 
 ```sh
 # Look up one or more known BSSIDs; zero limit uses Apple's default behavior.
@@ -55,9 +38,9 @@ bin/corelocation wifi --bssid 02:11:22:33:44:55 --region china --no-fallback
 # LTE identifiers are all explicit; MCC 460 prefers China without a hint.
 bin/corelocation cell --mcc 460 --mnc 0 --cell-id 12345 --tac 123 --limit 10
 
-# Fetch a single tile by key or by coordinates (zoom defaults to 13).
+# Fetch a single tile by key or by coordinates (always zoom 13).
 bin/corelocation tile --key 81644851
-bin/corelocation tile --lat 51.48 --lon -3.18 --zoom 13
+bin/corelocation tile --lat 51.48 --lon -3.18
 
 # Offline conversion; this never contacts Apple.
 bin/corelocation tile-key --lat 51.48 --lon -3.18 --zoom 13
@@ -71,9 +54,11 @@ The example BSSIDs and cell identifiers are illustrative, not known fixtures.
 All query commands accept `--region auto|international|china`, `--no-fallback`,
 `--timeout 20s` (whole query), and `--attempt-timeout 10s` (each endpoint).
 `--lat` and `--lon` must be supplied together. Tile commands accept either a key
-or coordinates, never both; `--zoom` applies only to coordinate input. Offline
-`tile-key` encoding requires an explicit `--zoom`; its JSON contains `key` as a
-decimal string (to preserve large values in JavaScript), `zoom`, and `center`.
+or coordinates, never both. Network `tile` queries always use zoom 13 and have
+no `--zoom` flag; keys encoding a different zoom are rejected before networking.
+Only offline `tile-key` encoding accepts (and requires) an explicit `--zoom`;
+its JSON contains `key` as a decimal string (to preserve large values in
+JavaScript), `zoom`, and `center`.
 LTE identifier flags are decimal, including zero-padded input.
 
 Wi-Fi and tile success shape:
@@ -130,6 +115,8 @@ func main() {
 
 The three network operations are `LookupWiFi`, `LookupCell`, and `FetchTile`.
 `TileKeyFromPoint`, `TileKey.Center`, and `TileKey.Zoom` handle offline geometry.
+For a queryable key use `TileKeyFromPoint(point, corelocation.WiFiTileZoom)`;
+`FetchTile` rejects keys at any other zoom before network I/O.
 Clients may be reused concurrently. Configuration is captured at construction;
 do not mutate a shared HTTP transport or request inputs during a call.
 
@@ -145,7 +132,6 @@ inspectable with `errors.Is` / `errors.As`, including failures from both attempt
 ### Result semantics
 
 - Wi-Fi/cell responses can include **neighbors**, not only submitted identifiers.
-  The library is not a device-position estimator and does not use RSSI.
 - Zero `MaxResults` leaves the selection to the service. Positive limits are
   request hints, not a promise about returned count; negative values are invalid.
 - Out-of-range coordinates, missing WLOC coordinates, absent tile location
@@ -177,11 +163,7 @@ Auto preference uses:
 The China preference box is latitude **18–54**, longitude **73–135**, inclusive.
 Small exclusion boxes prefer international for Hong Kong (21.8–22.6,
 113.8–114.5), Macau (22–22.25, 113.5–113.65), and Taiwan (21.8–25.4,
-119.3–122.1), matching the original project's dataset observations. These are
-**deliberately approximate operational hints, not borders or sovereignty claims**.
-They include false positives in neighboring countries and may misclassify border
-areas. A caller can override the preference or implement a more exact external
-policy without embedding map assets into every binary.
+119.3–122.1).
 
 Each query makes **at most two attempts**, one per region:
 
@@ -219,8 +201,22 @@ claimed to represent the latest iOS version.
 Tile keys use sentinel-prefixed Morton interleaving of Web Mercator x/y indexes.
 Coordinate conversion supports zoom 0–30 and latitude within ±85.0511287798066°;
 +180° maps to the final longitude column. Decode returns the tile **center**, not
-the original coordinate or the northwest corner. Zoom 13 is the conventional
-query zoom; support for other zooms by Apple's service is not guaranteed.
+the original coordinate or the northwest corner. Network queries are restricted
+to **zoom 13** (`WiFiTileZoom`); broader offline geometry support does not imply
+API support, and keys at other zooms are rejected rather than silently remapped.
+
+A live comparison on the international tile endpoint used the same Cardiff
+coordinate (51.46769695622337, -3.27392578125), with fallback disabled:
+
+| Zoom | Tile key | Observed result |
+| --- | --- | --- |
+| 12 | `20411212` | HTTP 404 |
+| 13 | `81644851` | Success: 454 decoded access points |
+| 14 | `326579407` | HTTP 404 |
+
+These are observations from a single location, not an Apple service specification
+or a guarantee that every zoom-13 tile contains data. They support exposing only
+the known working service zoom instead of an unsupported query option.
 
 Not included: crawlers, seed collection, nearest-AP exploration, shapefile/water
 filtering, SQLite, UI servers, spoofing, data submission, multilateration, and

@@ -8,7 +8,8 @@ import (
 
 // TileKey identifies a Web Mercator tile using Morton order: column (x) bits
 // occupy even positions, row (y) bits occupy odd positions, and a sentinel bit
-// at position 2*zoom records the zoom level. Supported zoom levels are 0 to 30.
+// at position 2*zoom records the zoom level. Offline geometry supports zooms
+// 0 to 30; network queries through FetchTile accept only WiFiTileZoom.
 type TileKey uint64
 
 const tileMercatorMaxLatitude = 85.0511287798066

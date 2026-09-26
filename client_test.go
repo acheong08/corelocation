@@ -240,6 +240,19 @@ func TestValidationBeforeIO(t *testing.T) {
 	if _, err := c.FetchTile(context.Background(), 0); err == nil {
 		t.Fatal("accepted invalid tile")
 	}
+	for zoom := 0; zoom <= 30; zoom++ {
+		if zoom == WiFiTileZoom {
+			continue
+		}
+		key, err := TileKeyFromPoint(Point{51.48, -3.18}, zoom)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := c.FetchTile(context.Background(), key)
+		if err == nil || !strings.Contains(err.Error(), "require zoom 13") || len(result.Attempts) != 0 {
+			t.Fatalf("zoom %d: expected validation error without attempts, got %+v, %v", zoom, result, err)
+		}
+	}
 	if calls.Load() != 0 {
 		t.Fatalf("validation performed IO")
 	}

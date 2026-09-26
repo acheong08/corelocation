@@ -10,10 +10,21 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// FetchTile returns located access points in a Wi-Fi tile. Its center is used
-// only for initial endpoint preference; empty tiles fall back to the other
-// region unless Config.DisableFallback is set. Apple may not serve every zoom.
+// WiFiTileZoom is the supported zoom for Apple's Wi-Fi tile service.
+// Other zooms are useful for offline geometry but are not accepted by FetchTile.
+const WiFiTileZoom = 13
+
+// FetchTile returns located access points in a zoom-13 Wi-Fi tile. Keys at other
+// zooms are rejected before network I/O. Its center determines initial endpoint
+// preference; empty tiles fall back unless Config.DisableFallback is set.
 func (c *Client) FetchTile(ctx context.Context, key TileKey) (Result[AccessPoint], error) {
+	zoom, err := key.Zoom()
+	if err != nil {
+		return Result[AccessPoint]{}, err
+	}
+	if zoom != WiFiTileZoom {
+		return Result[AccessPoint]{}, fmt.Errorf("Wi-Fi tile queries require zoom %d; key has zoom %d", WiFiTileZoom, zoom)
+	}
 	center, err := key.Center()
 	if err != nil {
 		return Result[AccessPoint]{}, err

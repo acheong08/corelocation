@@ -194,7 +194,7 @@ func TestTileModesAndOfflineRoundTrip(t *testing.T) {
 		}
 		return corelocation.Result[corelocation.AccessPoint]{}, nil
 	}}
-	for _, command := range []string{"tile --lat 39.9 --lon 116.4", "tile --lat 39.9 --lon 116.4 --zoom 13", "tile --key " + keyString} {
+	for _, command := range []string{"tile --lat 39.9 --lon 116.4", "tile --key " + keyString} {
 		code, out, diagnostic := invoke(t, strings.Fields(command), injected(fake))
 		if code != 0 || diagnostic != "" || out != "{\"records\":[],\"attempts\":[]}\n" {
 			t.Fatalf("code=%d out=%s stderr=%s", code, out, diagnostic)
@@ -213,6 +213,38 @@ func TestTileModesAndOfflineRoundTrip(t *testing.T) {
 	code, out, _ := invoke(t, strings.Fields("tile-key --lat 0 --lon 0 --zoom 30"), noClient(t))
 	if code != 0 || decode[tileKeyOutput](t, out).Zoom != 30 {
 		t.Fatalf("out=%s code=%d", out, code)
+	}
+}
+
+func TestTileRequiresServiceZoom(t *testing.T) {
+	for _, zoom := range []int{12, 13, 14} {
+		args := []string{"tile", "--lat", "51.48", "--lon", "-3.18", "--zoom", strconv.Itoa(zoom)}
+		code, out, _ := invoke(t, args, noClient(t))
+		problem := decode[struct{ Error string }](t, out)
+		if code != 2 || !strings.Contains(problem.Error, "flag provided but not defined: -zoom") {
+			t.Fatalf("--zoom must be removed even for 13: code=%d out=%s", code, out)
+		}
+	}
+	for zoom := 0; zoom <= 30; zoom++ {
+		if zoom == corelocation.WiFiTileZoom {
+			continue
+		}
+		key, err := corelocation.TileKeyFromPoint(corelocation.Point{Latitude: 51.48, Longitude: -3.18}, zoom)
+		if err != nil {
+			t.Fatal(err)
+		}
+		code, out, _ := invoke(t, []string{"tile", "--key", strconv.FormatUint(uint64(key), 10)}, noClient(t))
+		problem := decode[struct{ Error string }](t, out)
+		if code != 2 || !strings.Contains(problem.Error, "require zoom 13") {
+			t.Fatalf("zoom %d should be rejected before client creation: code=%d out=%s", zoom, code, out)
+		}
+	}
+	// Offline conversions still support zooms other than the service's zoom.
+	for _, zoom := range []int{12, 14} {
+		code, out, diagnostic := invoke(t, []string{"tile-key", "--lat", "51.48", "--lon", "-3.18", "--zoom", strconv.Itoa(zoom)}, noClient(t))
+		if code != 0 || diagnostic != "" || decode[tileKeyOutput](t, out).Zoom != zoom {
+			t.Fatalf("offline zoom %d: code=%d out=%s stderr=%s", zoom, code, out, diagnostic)
+		}
 	}
 }
 
