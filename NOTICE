@@ -1,0 +1,10 @@
+corelocation is a rewrite of the core query client from:
+https://github.com/acheong08/apple-corelocation-experiments
+Upstream revision: 0b136860e80585c02c12f64933995b872d7623af
+Original project author: acheong08 and contributors.
+
+The BSSIDApple and wifiTiles protobuf schemas and generated Go files under
+internal/pb are retained verbatim from that revision. Protocol constants and
+observations derive from the original project; query/client/routing/geometry/CLI
+implementations are rewritten. The original project's GNU GPL version 3 license
+is retained in LICENSE. This is not an Apple-supported SDK or Apple product.
