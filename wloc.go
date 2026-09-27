@@ -55,7 +55,7 @@ func (c *Client) LookupWiFi(ctx context.Context, req WiFiRequest) (Result[Access
 			out = append(out, AccessPoint{BSSID: mac, Location: p})
 			seen[mac] = true
 		}
-		return out, nil
+		return truncate(out, req.MaxResults), nil
 	})
 }
 
@@ -93,9 +93,20 @@ func (c *Client) LookupCell(ctx context.Context, req CellRequest) (Result[Cell],
 			out = append(out, Cell{Tower: tower, Location: p})
 			seen[tower] = true
 		}
-		return out, nil
+		return truncate(out, req.MaxResults), nil
 	})
 }
+
+// truncate enforces MaxResults locally: Apple's service overshoots the
+// requested count with neighboring records, so the caller-side cap is what
+// makes a positive MaxResults a real maximum.
+func truncate[T any](records []T, max int32) []T {
+	if max > 0 && int32(len(records)) > max {
+		return records[:max]
+	}
+	return records
+}
+
 func validateQuery(limit int32, hint *Point) error {
 	if limit < 0 {
 		return fmt.Errorf("max results cannot be negative")
@@ -105,9 +116,11 @@ func validateQuery(limit int32, hint *Point) error {
 	}
 	return nil
 }
+
 func deviceType() *pb.DeviceType {
 	return &pb.DeviceType{OperatingSystem: "iPhone OS17.5/21F79", Model: "iPhone12,1"}
 }
+
 func location(loc *pb.Location) (Point, bool) {
 	if loc == nil || loc.Latitude == nil || loc.Longitude == nil {
 		return Point{}, false
@@ -134,6 +147,7 @@ func encodeWLoc(block *pb.AppleWLoc) ([]byte, error) {
 	out = binary.BigEndian.AppendUint32(out, uint32(len(payload)))
 	return append(out, payload...), nil
 }
+
 func decodeWLoc(data []byte) (*pb.AppleWLoc, error) {
 	// Response: uint16 version, uint32 function, uint32 payload length, protobuf.
 	// Never slice an untrusted body before checking the envelope.
@@ -152,6 +166,7 @@ func decodeWLoc(data []byte) (*pb.AppleWLoc, error) {
 	}
 	return &block, nil
 }
+
 func (c *Client) wloc(ctx context.Context, region Region, payload []byte) (*pb.AppleWLoc, error) {
 	endpoint := c.endpoints.WLocInternational
 	if region == China {

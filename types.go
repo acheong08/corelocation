@@ -63,7 +63,7 @@ type Cell struct {
 type WiFiRequest struct {
 	BSSIDs []string
 	// MaxResults is passed to Apple. Zero selects the service default; positive
-	// values request a limit, not a guarantee of exact result count.
+	// values are enforced client-side as a hard cap on returned records.
 	MaxResults int32
 	// Hint affects routing only and is never transmitted to Apple.
 	Hint *Point

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -82,6 +83,22 @@ func TestWiFiWireAndFiltering(t *testing.T) {
 	result, err := c.LookupWiFi(context.Background(), WiFiRequest{BSSIDs: []string{"AA-BB-CC-DD-EE-FF", "aa:bb:cc:dd:ee:ff"}, MaxResults: 7, Hint: &Point{1, 2}})
 	if err != nil || len(result.Records) != 1 || result.Records[0].Location != (Point{}) {
 		t.Fatalf("result %+v err %v", result, err)
+	}
+}
+func TestMaxResultsTruncation(t *testing.T) {
+	loc := &pb.Location{Latitude: ptr(int64(0)), Longitude: ptr(int64(0))}
+	devices := []*pb.WifiDevice{}
+	for i := 0; i < 5; i++ {
+		devices = append(devices, &pb.WifiDevice{Bssid: fmt.Sprintf("02:11:22:33:44:%02x", i), Location: loc})
+	}
+	c := localClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write(frame(t, &pb.AppleWLoc{WifiDevices: devices}))
+	}, nil)
+	for _, tc := range []struct{ max, want int32 }{{0, 5}, {2, 2}, {5, 5}, {9, 5}} {
+		result, err := c.LookupWiFi(context.Background(), WiFiRequest{BSSIDs: []string{"02:11:22:33:44:00"}, MaxResults: tc.max})
+		if err != nil || int32(len(result.Records)) != tc.want {
+			t.Fatalf("max %d: %d records err %v", tc.max, len(result.Records), err)
+		}
 	}
 }
 func TestCellWireAndMCCRouting(t *testing.T) {
